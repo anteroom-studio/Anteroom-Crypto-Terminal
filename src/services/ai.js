@@ -5,8 +5,8 @@ export async function callOpenRouter(apiKey, messages) {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
       'HTTP-Referer': window.location.origin,
-      'X-Title': 'ZAI Terminal',
-      'X-OpenRouter-Title': 'ZAI Terminal',
+      'X-Title': 'Anteroom Crypto Terminal',
+      'X-OpenRouter-Title': 'Anteroom Crypto Terminal',
     },
     body: JSON.stringify({
       model: 'openai/gpt-4o-mini',
