@@ -8,6 +8,47 @@
   </head>
   <body>
     <div id="app"></div>
+    <script>
+      window.__ANTEROOM_BRAND_PATCH__ = function () {
+        document.title = 'Anteroom Crypto Terminal';
+        const setText = (selector, value) => {
+          const el = document.querySelector(selector);
+          if (el && el.textContent !== value) el.textContent = value;
+        };
+        setText('.brand-title', 'ANTEROOM');
+        setText('.brand-subtitle', 'CRYPTO TERMINAL');
+        setText('.dock-title', 'MARKET VERDICT');
+
+        const textMap = new Map([
+          ['ZAI PERSONAL TERMINAL', 'ANTEROOM CRYPTO TERMINAL'],
+          ['Futures-first execution stack · Zawwar framework · live data + local intelligence', 'Live market structure · liquidity context · execution research'],
+          ['AI Prediction Report', 'Market Analysis'],
+          ['ZAI Summary', 'Terminal Summary'],
+          ['Z-PAS logic', 'Execution logic'],
+          ['AI Analyst', 'Analyst Layer'],
+          ['Chat with ZAI', 'Terminal Assistant'],
+          ['What To Track Before Predicting Price', 'What To Track Before Reading Price'],
+          ['AI Mode', 'Analyst Mode'],
+          ['Generate Analysis', 'Generate Read'],
+        ]);
+
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        const nodes = [];
+        while (walker.nextNode()) nodes.push(walker.currentNode);
+        for (const node of nodes) {
+          let value = node.nodeValue;
+          for (const [from, to] of textMap.entries()) value = value.replaceAll(from, to);
+          value = value.replaceAll('ZAI', 'Terminal');
+          value = value.replaceAll('zai', 'terminal');
+          node.nodeValue = value;
+        }
+
+        document.querySelectorAll('.bubble span').forEach((el) => {
+          if (el.textContent.trim() === 'Terminal') el.textContent = 'Assistant';
+        });
+      };
+      setInterval(window.__ANTEROOM_BRAND_PATCH__, 500);
+    </script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
