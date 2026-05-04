@@ -1,4 +1,4 @@
-import { clamp, mad, median, formatSpread } from '../utils/format.js';
+import { mad, median, formatSpread } from '../utils/format.js';
 
 export function pushSnapshot(market, imbalance) {
   market.snapshots = [...market.snapshots.slice(-8), Number(imbalance.toFixed(4))];
