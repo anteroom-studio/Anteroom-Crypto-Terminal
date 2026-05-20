@@ -1,10 +1,11 @@
 import { clamp } from '../utils/format.js';
+import { displaySymbolFromContract, resolveFuturesSymbol } from '../utils/contracts.js';
 import { pushSnapshot, estimatePressureMap, summarizeRealFeed } from '../logic/zaiEngine.js';
 
 const FETCH_TIMEOUT_MS = 12000;
 const NEWS_CACHE_KEY = 'zai_news_cache_v2';
 const EVENTS_CACHE_KEY = 'zai_events_cache_v2';
-const SCAN_SYMBOLS = ['BTC','ETH','SOL','BNB','XRP','DOGE'];
+const SCAN_SYMBOLS = ['BTC','ETH','SOL','BNB','XRP','DOGE','SHIB','PEPE'];
 const NEWS_QUERIES = [
   { tag:'Crypto', q:'cryptocurrency OR bitcoin OR ethereum when:2d', gdelt:'(bitcoin OR ethereum OR crypto OR etf)' },
   { tag:'Macro', q:'Federal Reserve OR inflation OR CPI OR rates when:3d', gdelt:'(Federal Reserve OR CPI OR inflation OR rates OR recession)' },
@@ -14,7 +15,7 @@ const NEWS_QUERIES = [
   { tag:'AI', q:'artificial intelligence chips nvidia data centers when:2d', gdelt:'(artificial intelligence OR Nvidia OR chips OR data center)' },
 ];
 
-const pair = symbol => `${symbol.toUpperCase()}USDT`;
+const pair = symbol => resolveFuturesSymbol(symbol).contractSymbol;
 const googleNewsRss = query => `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
 const viaProxy = url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
 const viaRss2Json = url => `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&count=4`;
@@ -83,9 +84,9 @@ function pushSessionMarkers(events) {
 }
 
 export async function syncEvents(state) {
-  const events=[]; const symbol=state.symbol.toUpperCase();
-  const premium = await settle(fetchJson(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${pair(symbol)}`));
-  if (premium.ok) { const nextFundingTime = Number(premium.value?.nextFundingTime||0); state.market.nextFundingTime = nextFundingTime; if (nextFundingTime > Date.now()) events.push({ tag:'Crypto', title:`${symbol} next funding timestamp`, timeMs:nextFundingTime, source:'Binance Futures', impact:'Medium' }); }
+  const events=[]; const resolved=resolveFuturesSymbol(state.symbol);
+  const premium = await settle(fetchJson(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${resolved.contractSymbol}`));
+  if (premium.ok) { const nextFundingTime = Number(premium.value?.nextFundingTime||0); state.market.nextFundingTime = nextFundingTime; if (nextFundingTime > Date.now()) events.push({ tag:'Crypto', title:`${resolved.displaySymbol} next funding timestamp`, timeMs:nextFundingTime, source:'Binance Futures', impact:'Medium' }); }
   const calendar = await settle(fetchJson('https://api.tradingeconomics.com/calendar?c=guest:guest&f=json'));
   if (calendar.ok) {
     const now = Date.now();
@@ -103,7 +104,10 @@ export async function syncEvents(state) {
 }
 
 export async function syncMarket(state) {
-  const symbol = state.symbol.toUpperCase(); const contract = pair(symbol);
+  const resolved = resolveFuturesSymbol(state.symbol); const contract = resolved.contractSymbol;
+  state.symbol = resolved.displaySymbol;
+  state.market.contractSymbol = contract;
+  state.market.contractMultiplier = resolved.multiplier;
   const [ticker, depth, openInterest, openInterestStats, fundingRate, klines, premium] = await Promise.all([
     settle(fetchJson(`https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=${contract}`)),
     settle(fetchJson(`https://fapi.binance.com/fapi/v1/depth?symbol=${contract}&limit=20`)),
@@ -140,13 +144,15 @@ export async function syncScan(state) {
   ]);
   if (!ticker.ok) { state.scan = []; state.liveStatus.scan = 'Unavailable'; return; }
   const premiumMap = new Map((premium.ok ? premium.value : []).map(item => [String(item.symbol||''), item]));
-  const rows = ticker.value.filter(row => SCAN_SYMBOLS.includes(String(row.symbol||'').replace('USDT',''))).map(row => {
-    const symbol = String(row.symbol).replace('USDT','');
-    const p = premiumMap.get(row.symbol) || {};
-    const change = Number(row.priceChangePercent||0); const funding = Number(p.lastFundingRate||0); const quoteVolume = Number(row.quoteVolume||0);
-    const score = clamp(Math.round(50 + change * 2 + funding * 2500 + Math.log10(Math.max(quoteVolume,1)) * 3), 1, 99);
-    return { symbol, price: Number(row.lastPrice||0), change: change.toFixed(2), funding: (funding*100).toFixed(3), score, volume: quoteVolume };
-  }).sort((a,b)=>b.score-a.score);
+  const rows = ticker.value
+    .map(row => ({ row, symbol: displaySymbolFromContract(row.symbol) }))
+    .filter(item => SCAN_SYMBOLS.includes(item.symbol))
+    .map(({ row, symbol }) => {
+      const p = premiumMap.get(row.symbol) || {};
+      const change = Number(row.priceChangePercent||0); const funding = Number(p.lastFundingRate||0); const quoteVolume = Number(row.quoteVolume||0);
+      const score = clamp(Math.round(50 + change * 2 + funding * 2500 + Math.log10(Math.max(quoteVolume,1)) * 3), 1, 99);
+      return { symbol, price: Number(row.lastPrice||0), change: change.toFixed(2), funding: (funding*100).toFixed(3), score, volume: quoteVolume };
+    }).sort((a,b)=>b.score-a.score);
   state.scan = rows;
   state.liveStatus.scan = rows.length ? 'Live' : 'Unavailable';
 }
@@ -162,10 +168,12 @@ function makeUiThrottle(onTick, wait = 800) {
 }
 
 export function connectLiveStreams(state, onTick) {
-  const target = pair(state.symbol).toLowerCase(); const pushUi = makeUiThrottle(onTick, 800);
+  const resolved = resolveFuturesSymbol(state.symbol); const target = resolved.contractSymbol.toLowerCase(); const pushUi = makeUiThrottle(onTick, 800);
   if (state.streams.symbol === target && state.streams.mark && state.streams.liq) return;
   Object.values(state.streams).forEach(socket => { if (socket && socket.readyState <= 1) socket.close(); });
   state.streams.symbol = target;
+  state.market.contractSymbol = resolved.contractSymbol;
+  state.market.contractMultiplier = resolved.multiplier;
   try {
     const mark = new WebSocket(`wss://fstream.binance.com/ws/${target}@markPrice@1s`);
     mark.onopen = () => { state.liveStatus.market = state.liveStatus.market === 'Unavailable' ? 'Stream only' : 'Live + Stream'; pushUi(); };
