@@ -11,7 +11,17 @@ export function mad(values) {
   return median(values.map(v => Math.abs(v - med)));
 }
 export function formatUsd(value, compact = false) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: compact ? 'compact' : 'standard', maximumFractionDigits: compact ? 2 : value >= 1000 ? 0 : 2 }).format(Number(value || 0));
+  const n = Number(value || 0);
+  const abs = Math.abs(n);
+  if (!Number.isFinite(n)) return '$0.00';
+  if (compact) return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 2 }).format(n);
+  if (abs === 0) return '$0.00';
+  if (abs >= 1000) return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+  if (abs >= 1) return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+  if (abs >= 0.01) return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 4, maximumFractionDigits: 4 }).format(n);
+  if (abs >= 0.0001) return '$' + n.toFixed(6);
+  if (abs >= 0.000001) return '$' + n.toFixed(8);
+  return '$' + n.toPrecision(4);
 }
 export function formatSpread(value) {
   const v = Number(value || 0);
