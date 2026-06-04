@@ -1,5 +1,5 @@
 import { clamp } from '../utils/format.js';
-import { displaySymbolFromContract, resolveFuturesSymbol } from '../utils/contracts.js';
+import { displayPriceFromContract, displaySymbolFromContract, resolveFuturesSymbol } from '../utils/contracts.js';
 import { pushSnapshot, estimatePressureMap, summarizeRealFeed } from '../logic/zaiEngine.js';
 
 const FETCH_TIMEOUT_MS = 12000;
@@ -149,9 +149,10 @@ export async function syncScan(state) {
     .filter(item => SCAN_SYMBOLS.includes(item.symbol))
     .map(({ row, symbol }) => {
       const p = premiumMap.get(row.symbol) || {};
+      const { multiplier } = resolveFuturesSymbol(symbol);
       const change = Number(row.priceChangePercent||0); const funding = Number(p.lastFundingRate||0); const quoteVolume = Number(row.quoteVolume||0);
       const score = clamp(Math.round(50 + change * 2 + funding * 2500 + Math.log10(Math.max(quoteVolume,1)) * 3), 1, 99);
-      return { symbol, price: Number(row.lastPrice||0), change: change.toFixed(2), funding: (funding*100).toFixed(3), score, volume: quoteVolume };
+      return { symbol, price: displayPriceFromContract(Number(row.lastPrice||0), multiplier), change: change.toFixed(2), funding: (funding*100).toFixed(3), score, volume: quoteVolume };
     }).sort((a,b)=>b.score-a.score);
   state.scan = rows;
   state.liveStatus.scan = rows.length ? 'Live' : 'Unavailable';
