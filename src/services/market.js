@@ -29,7 +29,7 @@ async function fetchText(url) { const res = await timedFetch(url); if (!res.ok) 
 async function settle(promise) { try { return { ok:true, value:await promise }; } catch (error) { return { ok:false, error }; } }
 
 function cleanTitle(title='') { return title.replace(/\s+-\s+[^-]+$/, '').trim(); }
-function inferImpact(title='') { const t = title.toLowerCase(); if (/cpi|inflation|powell|fed|fomc|sec|war|tariff|hack|etf|jobs|nfp/.test(t)) return 'High'; if (/bitcoin|ethereum|nvidia|earnings|oil|rates|policy|election/.test(t)) return 'Medium'; return 'Low'; }
+function inferImpact(title='') { const t = title.toLowerCase(); if (/\b(cpi|inflation|powell|fed(?:eral)?|fomc|sec|wars?|tariffs?|hack(?:ed|s|er|ers|ing)?|etf|jobs?|nfp)\b/.test(t)) return 'High'; if (/\b(bitcoin|ethereum|nvidia|earnings|oils?|rates?|policy|election)\b/.test(t)) return 'Medium'; return 'Low'; }
 function extractSource(item) { return item.querySelector('source')?.textContent?.trim() || 'News source'; }
 function isGoodNewsItem(item) { const title=(item?.title||'').trim(); if (!title || title.length < 18) return false; if (!item?.publishedAt || Number.isNaN(new Date(item.publishedAt).getTime())) return false; if (/dog after fire|firefighters|congratulates bailey|investment watch blog/i.test(title)) return false; return true; }
 function normalizeNewsItem(feed, raw) {
