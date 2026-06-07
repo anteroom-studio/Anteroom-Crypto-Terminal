@@ -29,12 +29,13 @@ async function fetchText(url) { const res = await timedFetch(url); if (!res.ok) 
 async function settle(promise) { try { return { ok:true, value:await promise }; } catch (error) { return { ok:false, error }; } }
 
 function cleanTitle(title='') { return title.replace(/\s+-\s+[^-]+$/, '').trim(); }
+function parseNewsDate(value) { const m=/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z?$/.exec(String(value||'').trim()); return m ? `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}Z` : value; }
 function inferImpact(title='') { const t = title.toLowerCase(); if (/\b(cpi|inflation|powell|fed(?:eral)?|fomc|sec|wars?|tariffs?|hack(?:ed|s|er|ers|ing)?|etf|jobs?|nfp)\b/.test(t)) return 'High'; if (/\b(bitcoin|ethereum|nvidia|earnings|oils?|rates?|policy|election)\b/.test(t)) return 'Medium'; return 'Low'; }
 function extractSource(item) { return item.querySelector('source')?.textContent?.trim() || 'News source'; }
 function isGoodNewsItem(item) { const title=(item?.title||'').trim(); if (!title || title.length < 18) return false; if (!item?.publishedAt || Number.isNaN(new Date(item.publishedAt).getTime())) return false; if (/dog after fire|firefighters|congratulates bailey|investment watch blog/i.test(title)) return false; return true; }
 function normalizeNewsItem(feed, raw) {
   const title = cleanTitle(raw.title || 'Headline');
-  const publishedAt = raw.pubDate || raw.publishedAt || raw.seendate || new Date().toUTCString();
+  const publishedAt = parseNewsDate(raw.pubDate || raw.publishedAt || raw.seendate || new Date().toUTCString());
   return { tag: feed.tag, title, link: raw.link || raw.url || '', source: raw.source || raw.domain || raw.author || 'News source', publishedAt, minsAgo: Math.max(1, Math.round((Date.now() - new Date(publishedAt).getTime())/60000)), impact: inferImpact(title) };
 }
 
