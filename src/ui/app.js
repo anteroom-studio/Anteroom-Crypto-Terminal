@@ -1,5 +1,6 @@
 import { BOARD_TABS, TF_OPTIONS, state } from '../state.js';
 import { escapeHtml, formatSpread, formatUsd, futureTime, minsLabel, saveLocal } from '../utils/format.js';
+import { displayPriceFromContract } from '../utils/contracts.js';
 import { buildAlerts, buildWorkspacePlan, computeTradeability, localReply } from '../logic/zaiEngine.js';
 import { buildBoardData, connectLiveStreams, refreshIntelFeed, syncEvents, syncFearGreed, syncMarket, syncNews, syncScan } from '../services/market.js';
 import { callOpenRouter } from '../services/ai.js';
@@ -126,13 +127,13 @@ function renderLiq() {
   $('#sheet-list').innerHTML = [[`If ${state.symbol} loses ${state.market.longBreak}`,'Higher chance of long cascade and fast sentiment flush.'],[`If ${state.symbol} breaks ${state.market.shortBreak}`,'Short squeeze probability rises with momentum expansion.'],[`If long pressure exceeds ${formatUsd(state.market.liqLong*1.03,true)}`,'Look for relief bounce after a panic sweep.'],[`If short pressure exceeds ${formatUsd(state.market.liqShort*1.03,true)}`,'Trend can overshoot before cooling.']].map(([t,b])=>`<article class="sheet-item"><strong>${escapeHtml(t)}</strong><p>${escapeHtml(b)}</p></article>`).join('');
 }
 function renderChart() {
-  const series = state.market.series || []; const key = JSON.stringify([state.symbol,state.timeframe,state.market.lastPrice.toFixed(2),state.market.phase,series.length?[series[0],series[Math.floor(series.length/2)],series.at(-1),series.length]:[]]);
-  if (sameKey('chartKey', key)) { $('#chart-price').textContent = formatUsd(state.market.lastPrice||0); $('#chart-note').textContent = `${state.symbol} · ${state.timeframe.toUpperCase()} · ${state.market.phase}`; return; }
+  const series = state.market.series || []; const focusPrice = displayPriceFromContract(state.market.lastPrice || 0, state.market.contractMultiplier); const key = JSON.stringify([state.symbol,state.timeframe,formatUsd(focusPrice),state.market.phase,series.length?[series[0],series[Math.floor(series.length/2)],series.at(-1),series.length]:[]]);
+  if (sameKey('chartKey', key)) { $('#chart-price').textContent = formatUsd(focusPrice); $('#chart-note').textContent = `${state.symbol} · ${state.timeframe.toUpperCase()} · ${state.market.phase}`; return; }
   const canvas=$('#focus-chart'); const ctx=canvas.getContext('2d'); const w=canvas.width,h=canvas.height; ctx.clearRect(0,0,w,h); if (!series.length) return;
   const min=Math.min(...series), max=Math.max(...series), pad=18; ctx.strokeStyle='rgba(255,255,255,.07)';
   for(let i=0;i<4;i++){const y=pad+((h-pad*2)/3)*i; ctx.beginPath(); ctx.moveTo(pad,y); ctx.lineTo(w-pad,y); ctx.stroke();}
   ctx.beginPath(); series.forEach((v,i)=>{const x=pad+(i/Math.max(series.length-1,1))*(w-pad*2); const y=h-pad-((v-min)/((max-min)||1))*(h-pad*2); i?ctx.lineTo(x,y):ctx.moveTo(x,y);}); ctx.strokeStyle='rgba(170,246,255,.95)'; ctx.lineWidth=2; ctx.stroke();
-  $('#chart-price').textContent = formatUsd(state.market.lastPrice||0); $('#chart-note').textContent = `${state.symbol} · ${state.timeframe.toUpperCase()} · ${state.market.phase}`;
+  $('#chart-price').textContent = formatUsd(focusPrice); $('#chart-note').textContent = `${state.symbol} · ${state.timeframe.toUpperCase()} · ${state.market.phase}`;
 }
 function renderIntelFeed() { const key = JSON.stringify(state.intelFeed); if (sameKey('intelKey', key)) return; $('#intel-feed').innerHTML = state.intelFeed.map(item=>`<article class="intel-feed-item inner-frame"><div class="panel-subhead"><span>${escapeHtml(item.title)}</span><span class="micro-tag">${escapeHtml(item.kind)}</span></div><p>${escapeHtml(item.summary)}</p><strong>${escapeHtml(item.suggestion)}</strong></article>`).join(''); }
 function renderChat() { const key = JSON.stringify([state.apiKey ? 'OpenRouter' : 'Local Intelligence', state.chat]); if (sameKey('chatKey', key)) return; $('#chat-label').textContent = state.apiKey ? 'OpenRouter' : 'Local Intelligence'; $('#chat-log').innerHTML = state.chat.map(item=>`<article class="bubble ${item.role==='user'?'user':'zai'}"><span>${item.role==='user'?'You':'ZAI'}</span><p>${escapeHtml(item.text)}</p></article>`).join(''); $('#chat-log').scrollTop = $('#chat-log').scrollHeight; }
