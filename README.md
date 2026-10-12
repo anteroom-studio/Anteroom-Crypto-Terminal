@@ -2,7 +2,7 @@
 
 **A market research interface that asks whether the conditions behind a trade idea are actually stable.**
 
-[**Open live demo**](https://anteroom-studio.github.io/Anteroom-Crypto-Terminal/) · [**Discuss the methodology**](https://github.com/anteroom-studio/Anteroom-Crypto-Terminal/discussions) · [**Explore the code**](src/)
+[**Open live demo**](https://anteroom-studio.github.io/Anteroom-Crypto-Terminal/) · [**Review active engineering challenge**](https://github.com/anteroom-studio/Anteroom-Crypto-Terminal/issues/5) · [**Discuss ideas**](https://github.com/anteroom-studio/Anteroom-Crypto-Terminal/discussions) · [**Explore the code**](src/)
 
 Anteroom Crypto Terminal is a Vite-based, browser-run dashboard built within **Anteroom Studio**, the company founded by ZAI. It combines available crypto futures market data, stability checks, event/news context, and optional model-generated commentary. Its primary output is a **rule-based assessment of tradeability**, not an automated trade.
 
@@ -63,7 +63,7 @@ Build: `npm run build`. This project also includes GitHub Pages deployment confi
 
 The strongest contribution here is a reproducible counterexample, not a generic feature request. Show the symbol, timeframe, timestamps, observed inputs, reported status/verdict, and a suggested correction. Remove secrets and sensitive data.
 
-[**Join Discussions →**](https://github.com/anteroom-studio/Anteroom-Crypto-Terminal/discussions)  
+[**Review the active engineering issue →**](https://github.com/anteroom-studio/Anteroom-Crypto-Terminal/issues/5) · [**Join Discussions →**](https://github.com/anteroom-studio/Anteroom-Crypto-Terminal/discussions)  
 [**Open a bug report →**](https://github.com/anteroom-studio/Anteroom-Crypto-Terminal/issues/new)
 
 ## Scope
