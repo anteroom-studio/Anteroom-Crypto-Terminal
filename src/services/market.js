@@ -171,7 +171,8 @@ function makeUiThrottle(onTick, wait = 800) {
 
 export function connectLiveStreams(state, onTick) {
   const resolved = resolveFuturesSymbol(state.symbol); const target = resolved.contractSymbol.toLowerCase(); const pushUi = makeUiThrottle(onTick, 800);
-  if (state.streams.symbol === target && state.streams.mark && state.streams.liq) return;
+  const connected = socket => socket && socket.readyState <= 1;
+  if (state.streams.symbol === target && connected(state.streams.mark) && connected(state.streams.liq)) return;
   Object.values(state.streams).forEach(socket => { if (socket && socket.readyState <= 1) socket.close(); });
   // Observations for a previous symbol must not leak into the new tape.
   state.streams.symbol = target;
@@ -183,17 +184,18 @@ export function connectLiveStreams(state, onTick) {
   state.market.contractMultiplier = resolved.multiplier;
   try {
     const mark = new WebSocket(`wss://fstream.binance.com/ws/${target}@markPrice@1s`);
-    mark.onopen = () => { state.liveStatus.market = state.liveStatus.market === 'Unavailable' ? 'Stream only' : 'Live + Stream'; pushUi(); };
-    mark.onerror = () => { if (!state.market.lastPrice) state.liveStatus.market = 'Unavailable'; pushUi(); };
-    mark.onmessage = e => { const d = JSON.parse(e.data); state.market.markPrice=Number(d.p||state.market.markPrice||0); state.market.indexPrice=Number(d.i||state.market.indexPrice||0); state.market.funding=Number(d.r||state.market.funding||0); state.market.nextFundingTime=Number(d.T||state.market.nextFundingTime||0); state.liveStatus.market='Live + Stream'; pushUi(); };
+    mark.onopen = () => { if (state.streams.mark !== mark) return; state.liveStatus.market = state.liveStatus.market === 'Unavailable' ? 'Stream only' : 'Live + Stream'; pushUi(); };
+    mark.onerror = () => { if (state.streams.mark !== mark) return; if (!state.market.lastPrice) state.liveStatus.market = 'Unavailable'; pushUi(); };
+    mark.onmessage = e => { if (state.streams.mark !== mark) return; const d = JSON.parse(e.data); state.market.markPrice=Number(d.p||state.market.markPrice||0); state.market.indexPrice=Number(d.i||state.market.indexPrice||0); state.market.funding=Number(d.r||state.market.funding||0); state.market.nextFundingTime=Number(d.T||state.market.nextFundingTime||0); state.liveStatus.market='Live + Stream'; pushUi(); };
     state.streams.mark = mark;
   } catch {}
   try {
     const liq = new WebSocket(`wss://fstream.binance.com/ws/${target}@forceOrder`);
-    liq.onopen = () => { state.liveStatus.liq = 'Live'; pushUi(); };
-    liq.onerror = () => { state.liveStatus.liq = 'Unavailable'; pushUi(); };
+    liq.onopen = () => { if (state.streams.liq !== liq) return; state.liveStatus.liq = 'Live'; pushUi(); };
+    liq.onerror = () => { if (state.streams.liq !== liq) return; state.liveStatus.liq = 'Unavailable'; pushUi(); };
     liq.onclose = () => { if (state.streams.liq === liq) { state.liveStatus.liq = 'Disconnected'; pushUi(); } };
     liq.onmessage = e => {
+      if (state.streams.liq !== liq) return;
       try {
         const order = JSON.parse(e.data)?.o;
         if (recordLiquidationEvent(state.market, order)) {
