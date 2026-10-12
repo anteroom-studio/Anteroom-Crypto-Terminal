@@ -70,6 +70,16 @@ export function recordLiquidationEvent(market, order, now = Date.now()) {
   return true;
 }
 
+// The numbers shown as observed must not contain modeled pressure estimates.
+// This is a fixed 15-minute window from the first event, not a rolling full market tape.
+export function observedLiquidationsInWindow(market, now = Date.now()) {
+  const start = Number(market.liqWindowStart);
+  if (!Number.isFinite(start) || !Number.isFinite(now) || now < start || now - start >= 15 * 60 * 1000) {
+    return { long: 0, short: 0 };
+  }
+  return { long: market.observedLiqLong || 0, short: market.observedLiqShort || 0 };
+}
+
 export function buildAlerts(state, intel) {
   const alerts = [];
   if (!intel.tradeable) alerts.push({ tone: 'warn', text: `Tradeability gate is closed on ${state.symbol}. Depth ${state.market.depthM.toFixed(2)}M is below the efficient threshold.` });
