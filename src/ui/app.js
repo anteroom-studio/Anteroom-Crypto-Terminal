@@ -1,7 +1,7 @@
 import { BOARD_TABS, TF_OPTIONS, state } from '../state.js';
 import { escapeHtml, formatSpread, formatUsd, futureTime, minsLabel, saveLocal } from '../utils/format.js';
 import { displayPriceFromContract } from '../utils/contracts.js';
-import { buildAlerts, buildWorkspacePlan, computeTradeability, localReply } from '../logic/zaiEngine.js';
+import { buildAlerts, buildWorkspacePlan, computeTradeability, localReply, observedLiquidationsInWindow } from '../logic/zaiEngine.js';
 import { buildBoardData, connectLiveStreams, refreshIntelFeed, syncEvents, syncFearGreed, syncMarket, syncNews, syncScan } from '../services/market.js';
 import { callOpenRouter } from '../services/ai.js';
 import nebulaUrl from '../assets/living-nebula-red-enhanced.jpeg';
@@ -65,7 +65,7 @@ function layout() {
       </section>
       <aside class="side right-stack">
         <section class="panel shell-frame"><div class="panel-bar"><span>Terminal Time</span><span class="status live">Local</span></div><div class="clock-wrap"><div class="analog"><span class="hand hour"></span><span class="hand minute"></span><span class="hand second"></span><span class="clock-core"></span></div><div><div class="digital-time" id="digital-time"></div><div class="digital-date" id="digital-date"></div></div></div></section>
-        <section class="panel shell-frame"><div class="panel-bar"><span>Liquidation Tape</span><span class="status danger" id="liq-status">${state.liveStatus.liq}</span></div><div class="liq-grid"><article class="stat-card inner-frame"><label>Long Pressure</label><strong id="liq-long"></strong></article><article class="stat-card inner-frame"><label>Short Pressure</label><strong id="liq-short"></strong></article></div><div class="sheet-list" id="sheet-list"></div></section>
+        <section class="panel shell-frame"><div class="panel-bar"><span>Liquidation Pressure + Observations</span><span class="status danger" id="liq-status">${state.liveStatus.liq}</span></div><div class="liq-grid"><article class="stat-card inner-frame"><label>Modeled Long Pressure</label><strong id="liq-long"></strong></article><article class="stat-card inner-frame"><label>Modeled Short Pressure</label><strong id="liq-short"></strong></article><article class="stat-card inner-frame"><label>Observed Long Liquidations (15m)</label><strong id="liq-observed-long"></strong></article><article class="stat-card inner-frame"><label>Observed Short Liquidations (15m)</label><strong id="liq-observed-short"></strong></article></div><div class="sheet-list" id="sheet-list"></div></section>
         <section class="panel shell-frame"><div class="panel-bar"><span>Focus Coin Monitor</span><span class="status alt" id="focus-badge">${escapeHtml(state.symbol)}</span></div><div class="focus-tools"><label class="api-box compact-box"><span>Coin</span><input id="symbol-input-side" type="text" value="${escapeHtml(state.symbol)}" /></label><div class="tab-row compact" id="tf-tabs-side"></div></div><div class="chart-frame inner-frame"><canvas id="focus-chart" width="540" height="240"></canvas><div class="chart-copy"><div class="chart-price" id="chart-price"></div><div class="chart-note" id="chart-note"></div></div></div></section>
         <section class="panel shell-frame"><div class="panel-bar"><span>Market Scan</span><span class="status soft" id="scan-status">${state.liveStatus.scan}</span></div><div class="scan-list" id="scan-list"></div></section>
         <section class="panel shell-frame"><div class="panel-bar"><span>Terminal Alerts</span><span class="status warn">Watch</span></div><div class="alerts-list" id="alerts-list"></div></section>
@@ -122,9 +122,22 @@ function renderReport() {
   $('#analysis-status').textContent = state.aiStatus; $('#analysis-copy').textContent = state.aiAnalysis || 'Enter a user API key and generate a read, or stay in local mode for rules-only interpretation.';
 }
 function renderLiq() {
-  const key = JSON.stringify([state.liveStatus.liq,state.market.liqLong.toFixed(0),state.market.liqShort.toFixed(0),state.market.longBreak,state.market.shortBreak]); if (sameKey('liqKey', key)) return;
-  $('#liq-status').textContent = state.liveStatus.liq; $('#liq-long').textContent = formatUsd(state.market.liqLong,true); $('#liq-short').textContent = formatUsd(state.market.liqShort,true);
-  $('#sheet-list').innerHTML = [[`If ${state.symbol} loses ${state.market.longBreak}`,'Higher chance of long cascade and fast sentiment flush.'],[`If ${state.symbol} breaks ${state.market.shortBreak}`,'Short squeeze probability rises with momentum expansion.'],[`If long pressure exceeds ${formatUsd(state.market.liqLong*1.03,true)}`,'Look for relief bounce after a panic sweep.'],[`If short pressure exceeds ${formatUsd(state.market.liqShort*1.03,true)}`,'Trend can overshoot before cooling.']].map(([t,b])=>`<article class="sheet-item"><strong>${escapeHtml(t)}</strong><p>${escapeHtml(b)}</p></article>`).join('');
+  const market = state.market;
+  const observed = observedLiquidationsInWindow(market);
+  const streamLive = state.liveStatus.liq === 'Live';
+  const key = JSON.stringify([state.liveStatus.liq, market.estimatedLiqLong.toFixed(0), market.estimatedLiqShort.toFixed(0), observed.long.toFixed(0), observed.short.toFixed(0), market.longBreak, market.shortBreak]);
+  if (sameKey('liqKey', key)) return;
+  $('#liq-status').textContent = state.liveStatus.liq;
+  $('#liq-long').textContent = formatUsd(market.estimatedLiqLong, true);
+  $('#liq-short').textContent = formatUsd(market.estimatedLiqShort, true);
+  $('#liq-observed-long').textContent = streamLive ? formatUsd(observed.long, true) : 'Feed not live';
+  $('#liq-observed-short').textContent = streamLive ? formatUsd(observed.short, true) : 'Feed not live';
+  $('#sheet-list').innerHTML = [
+    ['Modeled pressure (not observed liquidation totals)', 'Derived from open interest and heuristic adjustments, not exchange-reported liquidations.'],
+    ['Exchange observations (fixed 15-minute window)', 'Separate event notionals; only observed while the exchange stream is connected.'],
+    [`If ${state.symbol} loses ${market.longBreak}`, 'Heuristic downside pressure level, not an observed liquidation price.'],
+    [`If ${state.symbol} breaks ${market.shortBreak}`, 'Heuristic upside pressure level, not an observed liquidation price.'],
+  ].map(([t,b]) => `<article class="sheet-item"><strong>${escapeHtml(t)}</strong><p>${escapeHtml(b)}</p></article>`).join('');
 }
 function renderChart() {
   const series = state.market.series || []; const focusPrice = displayPriceFromContract(state.market.lastPrice || 0, state.market.contractMultiplier); const key = JSON.stringify([state.symbol,state.timeframe,formatUsd(focusPrice),state.market.phase,series.length?[series[0],series[Math.floor(series.length/2)],series.at(-1),series.length]:[]]);
