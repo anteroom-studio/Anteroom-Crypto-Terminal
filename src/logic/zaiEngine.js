@@ -47,10 +47,27 @@ export function estimatePressureMap(state) {
   const price = market.lastPrice || 0;
   const atrGuess = Math.max(price * 0.0035, symbol === 'BTC' ? 140 : symbol === 'ETH' ? 10 : 2);
   const oiUsd = market.openInterestUsd || 0;
-  market.liqLong = oiUsd * (0.24 + Math.max(0, -median(market.stableHistory)) * 0.4 + Math.max(0, market.oiDeltaPct) * 0.005);
-  market.liqShort = oiUsd * (0.22 + Math.max(0, median(market.stableHistory)) * 0.4 + Math.max(0, market.oiDeltaPct) * 0.004);
+  market.estimatedLiqLong = oiUsd * (0.24 + Math.max(0, -median(market.stableHistory)) * 0.4 + Math.max(0, market.oiDeltaPct) * 0.005);
+  market.estimatedLiqShort = oiUsd * (0.22 + Math.max(0, median(market.stableHistory)) * 0.4 + Math.max(0, market.oiDeltaPct) * 0.004);
   market.longBreak = Math.round(price - atrGuess);
   market.shortBreak = Math.round(price + atrGuess * 1.45);
+}
+
+// Counts only exchange-reported events, never heuristic open-interest estimates.
+// SELL is a long liquidation; BUY is a short liquidation on Binance's forceOrder feed.
+export function recordLiquidationEvent(market, order, now = Date.now()) {
+  if (!order || !['SELL', 'BUY'].includes(order.S) || !Number.isFinite(now)) return false;
+  const price = Number(order.ap || order.p);
+  const quantity = Number(order.q);
+  if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(quantity) || quantity <= 0) return false;
+  if (!Number.isFinite(market.liqWindowStart) || now < market.liqWindowStart || now - market.liqWindowStart >= 15 * 60 * 1000) {
+    market.liqWindowStart = now;
+    market.observedLiqLong = 0;
+    market.observedLiqShort = 0;
+  }
+  if (order.S === 'SELL') market.observedLiqLong += price * quantity;
+  else market.observedLiqShort += price * quantity;
+  return true;
 }
 
 export function buildAlerts(state, intel) {
