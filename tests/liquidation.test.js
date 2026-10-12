@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { estimatePressureMap, observedLiquidationsInWindow, recordLiquidationEvent } from '../src/logic/zaiEngine.js';
+import { connectLiveStreams } from '../src/services/market.js';
 
 function market() {
   return {
@@ -54,4 +55,52 @@ test('invalid or malformed stream entries are not recorded', () => {
   }
   assert.equal(m.observedLiqLong, 0);
   assert.equal(m.observedLiqShort, 0);
+});
+
+test('stream restart handles closed sockets and excludes stale symbol events', () => {
+  const priorWebSocket = globalThis.WebSocket;
+  const sockets = [];
+  class FakeSocket {
+    constructor(url) {
+      this.url = url;
+      this.readyState = 0;
+      sockets.push(this);
+    }
+    close() { this.readyState = 3; }
+  }
+  globalThis.WebSocket = FakeSocket;
+  try {
+    const m = market();
+    const state = {
+      symbol: 'BTC',
+      streams: { symbol: null, mark: null, liq: null },
+      liveStatus: { market: 'Connecting', liq: 'Connecting' },
+      market: m,
+    };
+    const frame = (socket, data) => socket.onmessage?.({ data: JSON.stringify(data) });
+    connectLiveStreams(state);
+    const oldMark = state.streams.mark;
+    const oldLiq = state.streams.liq;
+    oldLiq.onopen();
+    frame(oldLiq, { o: { S: 'SELL', p: '100', q: '2' } });
+    assert.equal(m.observedLiqLong, 200);
+    state.symbol = 'ETH';
+    connectLiveStreams(state);
+    assert.notEqual(state.streams.liq, oldLiq);
+    assert.equal(m.observedLiqLong, 0);
+    frame(oldLiq, { o: { S: 'SELL', p: '100', q: '3' } });
+    frame(oldMark, { p: '5000' });
+    assert.equal(m.observedLiqLong, 0);
+    assert.notEqual(m.markPrice, 5000);
+    const newLiq = state.streams.liq;
+    newLiq.onopen();
+    frame(newLiq, { o: { S: 'BUY', p: '100', q: '4' } });
+    assert.equal(m.observedLiqShort, 400);
+    state.streams.liq.readyState = 3;
+    connectLiveStreams(state);
+    assert.notEqual(state.streams.liq, newLiq);
+    assert.equal(m.observedLiqShort, 0);
+  } finally {
+    globalThis.WebSocket = priorWebSocket;
+  }
 });
