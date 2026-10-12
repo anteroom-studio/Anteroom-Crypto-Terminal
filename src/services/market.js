@@ -1,6 +1,6 @@
 import { clamp } from '../utils/format.js';
 import { displayPriceFromContract, displaySymbolFromContract, resolveFuturesSymbol } from '../utils/contracts.js';
-import { pushSnapshot, estimatePressureMap, summarizeRealFeed } from '../logic/zaiEngine.js';
+import { pushSnapshot, estimatePressureMap, recordLiquidationEvent, summarizeRealFeed } from '../logic/zaiEngine.js';
 
 const FETCH_TIMEOUT_MS = 12000;
 const NEWS_CACHE_KEY = 'zai_news_cache_v2';
@@ -173,7 +173,12 @@ export function connectLiveStreams(state, onTick) {
   const resolved = resolveFuturesSymbol(state.symbol); const target = resolved.contractSymbol.toLowerCase(); const pushUi = makeUiThrottle(onTick, 800);
   if (state.streams.symbol === target && state.streams.mark && state.streams.liq) return;
   Object.values(state.streams).forEach(socket => { if (socket && socket.readyState <= 1) socket.close(); });
+  // Observations for a previous symbol must not leak into the new tape.
   state.streams.symbol = target;
+  state.market.observedLiqLong = 0;
+  state.market.observedLiqShort = 0;
+  state.market.liqWindowStart = Date.now();
+  state.liveStatus.liq = 'Connecting';
   state.market.contractSymbol = resolved.contractSymbol;
   state.market.contractMultiplier = resolved.multiplier;
   try {
@@ -186,8 +191,17 @@ export function connectLiveStreams(state, onTick) {
   try {
     const liq = new WebSocket(`wss://fstream.binance.com/ws/${target}@forceOrder`);
     liq.onopen = () => { state.liveStatus.liq = 'Live'; pushUi(); };
-    liq.onerror = () => { if (!state.market.liqLong && !state.market.liqShort) state.liveStatus.liq = 'Unavailable'; pushUi(); };
-    liq.onmessage = e => { const d = JSON.parse(e.data); const o = d?.o; if (!o) return; const usd = Number(o.ap || o.p || 0) * Number(o.q || 0); const isLongLiq = o.S === 'SELL'; const now = Date.now(); if (now - state.market.liqWindowStart > 15*60*1000) { state.market.liqWindowStart = now; state.market.liqLong = 0; state.market.liqShort = 0; } if (isLongLiq) state.market.liqLong += usd; else state.market.liqShort += usd; state.liveStatus.liq = 'Live'; pushUi(); };
+    liq.onerror = () => { state.liveStatus.liq = 'Unavailable'; pushUi(); };
+    liq.onclose = () => { if (state.streams.liq === liq) { state.liveStatus.liq = 'Disconnected'; pushUi(); } };
+    liq.onmessage = e => {
+      try {
+        const order = JSON.parse(e.data)?.o;
+        if (recordLiquidationEvent(state.market, order)) {
+          state.liveStatus.liq = 'Live';
+          pushUi();
+        }
+      } catch { /* Malformed stream payload: retain existing observation state. */ }
+    };
     state.streams.liq = liq;
   } catch { state.liveStatus.liq = 'Unavailable'; }
 }
